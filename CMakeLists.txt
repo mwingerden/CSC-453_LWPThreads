@@ -10,4 +10,5 @@ add_executable(lwp_threads main.c
         numbersmain.c
         rr.c
         snakes.h
-        util.h)
+        util.h
+        hungrysnakes.c)

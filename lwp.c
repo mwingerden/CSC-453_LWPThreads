@@ -11,23 +11,23 @@
 #define LWP_TERMINATED  3
 
 static struct threadinfo_st threads[MAX_THREADS];
-static tid_t current_thread = NO_THREAD;  // Initialize to an invalid value
-static scheduler current_scheduler = NULL;
+static tid_t currentThread = NO_THREAD;  // Initialize to an invalid value
+static scheduler currentScheduler = NULL;
 
 static void lwp_schedule();
 
 extern tid_t lwp_create(lwpfun fun, void *arg) {
     int i;
-    tid_t new_thread_id = NO_THREAD;
+    tid_t newThreadId = NO_THREAD;
 
     for (i = 1; i < MAX_THREADS; i++) {
         if (threads[i].status == LWP_TERMINATED) {
-            new_thread_id = i;
+            newThreadId = i;
             break;
         }
     }
 
-    if (new_thread_id == NO_THREAD) {
+    if (newThreadId == NO_THREAD) {
         fprintf(stderr, "Maximum number of threads reached.\n");
         return NO_THREAD;
     }
@@ -38,49 +38,52 @@ extern tid_t lwp_create(lwpfun fun, void *arg) {
         return NO_THREAD;
     }
 
-    struct threadinfo_st *new_thread = &threads[new_thread_id];
-    new_thread->tid = new_thread_id;
-    new_thread->stack = stack;
-    new_thread->status = LWP_READY;
-    new_thread->exited = 0;
-    new_thread->lib_one = NULL;
-    new_thread->lib_two = NULL;
-    new_thread->sched_one = NULL;
-    new_thread->sched_two = NULL;
+    struct threadinfo_st *newThread = &threads[newThreadId];
+    newThread->tid = newThreadId;
+    newThread->stack = stack;
+    newThread->status = LWP_READY;
+    newThread->exited = 0;
+    newThread->lib_one = NULL;
+    newThread->lib_two = NULL;
+    newThread->sched_one = NULL;
+    newThread->sched_two = NULL;
 
-    tid_t old_thread = current_thread;
+    tid_t old_thread = currentThread;
 
-    current_thread = new_thread_id;
+    currentThread = newThreadId;
     lwp_schedule();
 
-    if (new_thread->status == LWP_READY) {
-        current_scheduler->admit(new_thread);
+    if (newThread->status == LWP_READY) {
+        currentScheduler->admit(newThread);
     }
 
-    new_thread->state.rdi = (unsigned long)arg;
-    new_thread->state.rbp = (unsigned long)fun;
+    newThread->state.rdi = (unsigned long)arg;
+    newThread->state.rbp = (unsigned long)fun;
 
-    return new_thread_id;
+    return newThreadId;
 }
 
 extern void lwp_exit(int status) {
-    struct threadinfo_st *current = &threads[current_thread];
+    struct threadinfo_st *current = &threads[currentThread];
     current->exited = (thread)(unsigned long)(int)status;
 
     current->status = LWP_TERMINATED;
 
-    tid_t old_thread = current_thread;
+    tid_t oldThread = currentThread;
 
-    current_thread = current_scheduler->next()->tid;
+    currentThread = currentScheduler->next()->tid;
     lwp_schedule();
 
-    if (threads[old_thread].status == LWP_READY) {
-        current_scheduler->admit(&threads[old_thread]);
+    if (threads[oldThread].status == LWP_READY) {
+        currentScheduler->admit(&threads[oldThread]);
     }
+
+    // Deallocate the thread's stack
+    munmap(threads[oldThread].stack, STACK_SIZE);
 }
 
 extern tid_t lwp_gettid(void) {
-    return current_thread;
+    return currentThread;
 }
 
 extern void lwp_yield(void) {
@@ -88,35 +91,35 @@ extern void lwp_yield(void) {
 }
 
 static void lwp_schedule() {
-    tid_t old_thread = current_thread;
-    current_thread = current_scheduler->next()->tid;
+    tid_t oldThread = currentThread;
+    currentThread = currentScheduler->next()->tid;
 
-    swap_rfiles(&threads[old_thread].state, &threads[current_thread].state);
+    swap_rfiles(&threads[oldThread].state, &threads[currentThread].state);
 
-    if (threads[old_thread].status == LWP_READY) {
-        current_scheduler->admit(&threads[old_thread]);
+    if (threads[oldThread].status == LWP_READY) {
+        currentScheduler->admit(&threads[oldThread]);
     }
 }
 
 extern void lwp_start(void) {
-    if (current_scheduler == NULL) {
+    if (currentScheduler == NULL) {
         fprintf(stderr, "No scheduler set. Use lwp_set_scheduler() to set a scheduler.\n");
         return;
     }
 
-    struct threadinfo_st *initial_thread = &threads[0];
-    current_thread = initial_thread->tid;
-    current_scheduler->admit(initial_thread);
+    struct threadinfo_st *initialThread = &threads[0];
+    currentThread = initialThread->tid;
+    currentScheduler->admit(initialThread);
     lwp_schedule();
 }
 
 extern tid_t lwp_wait(int *status) {
     int i;
-    tid_t thread_id = NO_THREAD;
+    tid_t threadId = NO_THREAD;
 
     for (i = 1; i < MAX_THREADS; i++) {
         if (threads[i].status == LWP_TERMINATED) {
-            thread_id = i;
+            threadId = i;
             if (status != NULL) {
                 *status = (int)(unsigned long)threads[i].exited;
             }
@@ -125,26 +128,26 @@ extern tid_t lwp_wait(int *status) {
         }
     }
 
-    if (thread_id == NO_THREAD && current_scheduler->qlen() > 1) {
-        struct threadinfo_st *current = &threads[current_thread];
+    if (threadId == NO_THREAD && currentScheduler->qlen() > 1) {
+        struct threadinfo_st *current = &threads[currentThread];
         current->status = LWP_BLOCKED;
         lwp_schedule();
-        thread_id = current_thread;
+        threadId = currentThread;
 
         if (status != NULL) {
-            *status = (int)(unsigned long)threads[thread_id].exited;
+            *status = (int)(unsigned long)threads[threadId].exited;
         }
     }
 
-    return thread_id;
+    return threadId;
 }
 
 extern void lwp_set_scheduler(scheduler fun) {
-    current_scheduler = fun;
+    currentScheduler = fun;
 }
 
 extern scheduler lwp_get_scheduler(void) {
-    return current_scheduler;
+    return currentScheduler;
 }
 
 extern thread tid2thread(tid_t tid) {
